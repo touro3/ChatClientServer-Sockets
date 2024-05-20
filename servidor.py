@@ -1,63 +1,173 @@
-#!/usr/bin/python
-
 import socket
-import queue
-import time
-from collections import deque
-from _thread import *
+import threading
+import re
 
-MOTD = ''' servidor '''
-
-class Cliente:
-    def __init__(self, conn):
+class ClientHandler(threading.Thread):
+    def __init__(self, conn, addr, server):
+        threading.Thread.__init__(self)
         self.conn = conn
+        self.addr = addr
+        self.server = server
+        self.nickname = None
+        self.realname = None
+        self.channels = []
 
-    def receber_dados(self):
-        pass
-
-    def enviar_dados(self, msg):
-        pass
-
-class Servidor:
-    def __init__(self, port=6667):
-        self.conns = deque()
-        self.port = port
-
-    def run(self, conn):
-        Cliente(conn)
-        pass
-
-    def listen(self):
-        '''
-        (não alterar)
-        Escuta múltiplas conexões na porta definida, chamando o método run para
-        cada uma. Propriedades da classe Servidor são vistas e podem
-        ser alteradas por todas as conexões.
-        '''
-        _socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        _socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        _socket.bind(('', self.port))
-        _socket.listen(4096)
+    def run(self):
+        self.conn.send(b':server 375 :Welcome to the IRC server\r\n')
         while True:
-            print(f'Servidor aceitando conexões na porta {self.port}...')
-            client, addr = _socket.accept()
-            start_new_thread(self.run, (client, ))
+            try:
+                message = self.conn.recv(512).decode('utf-8').strip()
+                if message:
+                    print(f"Received message from {self.addr}: {message}")
+                    self.handle_message(message)
+                else:
+                    break
+            except:
+                break
+        self.disconnect()
+
+    def handle_message(self, message):
+        if message.startswith('NICK'):
+            self.handle_nick(message)
+        elif message.startswith('USER'):
+            self.handle_user(message)
+        elif message.startswith('JOIN'):
+            self.handle_join(message)
+        elif message.startswith('PART'):
+            self.handle_part(message)
+        elif message.startswith('QUIT'):
+            self.handle_quit(message)
+        elif message.startswith('PRIVMSG'):
+            self.handle_privmsg(message)
+        elif message.startswith('NAMES'):
+            self.handle_names(message)
+        elif message.startswith('PING'):
+            self.handle_ping(message)
+        else:
+            self.conn.send(b':server 421 :Unknown command\r\n')
+
+    def handle_nick(self, message):
+        nickname = message.split(' ')[1]
+        if re.match(r'^[a-zA-Z][a-zA-Z0-9_]{0,8}$', nickname):
+            if nickname not in self.server.nicknames:
+                self.nickname = nickname
+                self.server.nicknames[nickname] = self
+                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server\r\n'.encode('utf-8'))
+                self.conn.send(f':server 375 {nickname} :- Welcome to the IRC server -\r\n'.encode('utf-8'))
+                self.conn.send(f':server 372 {nickname} :- This is the message of the day\r\n'.encode('utf-8'))
+                self.conn.send(f':server 376 {nickname} :End of /MOTD command.\r\n'.encode('utf-8'))
+                print(f"User {nickname} created successfully.")
+            else:
+                self.conn.send(f':server 433 * {nickname} :Nickname is already in use\r\n'.encode('utf-8'))
+        else:
+            self.conn.send(f':server 432 * {nickname} :Erroneous Nickname\r\n'.encode('utf-8'))
+
+    def handle_user(self, message):
+        parts = message.split(' ', 4)
+        if len(parts) == 5:
+            self.realname = parts[4][1:]  # Skip the leading colon
+            print(f"User {self.nickname} set real name to {self.realname}")
+
+    def handle_join(self, message):
+        parts = message.split(' ')
+        if len(parts) < 2:
+            self.conn.send(f':server 461 {self.nickname} JOIN :Not enough parameters\r\n'.encode('utf-8'))
+            return
+        channel = parts[1]
+        if re.match(r'^#[a-zA-Z0-9_]{1,63}$', channel):
+            if channel not in self.server.channels:
+                self.server.channels[channel] = []
+                print(f"Channel {channel} created successfully.")
+            self.server.channels[channel].append(self)
+            self.channels.append(channel)
+            self.conn.send(f':{self.nickname} JOIN {channel}\r\n'.encode('utf-8'))
+            self.server.broadcast(channel, f':{self.nickname} JOIN {channel}\r\n')
+            self.conn.send(f':server 353 {self.nickname} = {channel} :{" ".join([client.nickname for client in self.server.channels[channel]])}\r\n'.encode('utf-8'))
+            self.conn.send(f':server 366 {self.nickname} {channel} :End of /NAMES list.\r\n'.encode('utf-8'))
+            print(f"User {self.nickname} joined channel {channel}.")
+        else:
+            self.conn.send(f':server 403 {self.nickname} {channel} :No such channel\r\n'.encode('utf-8'))
+
+    def handle_part(self, message):
+        parts = message.split(' ')
+        if len(parts) < 2:
+            self.conn.send(f':server 461 {self.nickname} PART :Not enough parameters\r\n'.encode('utf-8'))
+            return
+        channel = parts[1]
+        if channel in self.server.channels and self in self.server.channels[channel]:
+            self.server.channels[channel].remove(self)
+            self.channels.remove(channel)
+            self.server.broadcast(channel, f':{self.nickname} PART {channel}\r\n')
+            print(f"User {self.nickname} left channel {channel}.")
+        else:
+            self.conn.send(f':server 442 {self.nickname} {channel} :You’re not on that channel\r\n'.encode('utf-8'))
+
+    def handle_quit(self, message):
+        self.disconnect()
+
+    def handle_privmsg(self, message):
+        parts = message.split(' ', 2)
+        if len(parts) == 3:
+            target = parts[1]
+            msg = parts[2][1:]  # Skip the leading colon
+            if target.startswith("#"):
+                if target in self.server.channels and self in self.server.channels[target]:
+                    self.server.broadcast(target, f':{self.nickname} PRIVMSG {target} :{msg}\r\n')
+            else:
+                if target in self.server.nicknames:
+                    self.server.nicknames[target].conn.send(f':{self.nickname} PRIVMSG {target} :{msg}\r\n'.encode('utf-8'))
+
+    def handle_names(self, message):
+        parts = message.split(' ')
+        if len(parts) < 2:
+            self.conn.send(f':server 461 {self.nickname} NAMES :Not enough parameters\r\n'.encode('utf-8'))
+            return
+        channel = parts[1]
+        if channel in self.server.channels:
+            users = ' '.join([client.nickname for client in self.server.channels[channel]])
+            self.conn.send(f':server 353 {self.nickname} = {channel} :{users}\r\n'.encode('utf-8'))
+            self.conn.send(f':server 366 {self.nickname} {channel} :End of /NAMES list.\r\n'.encode('utf-8'))
+        else:
+            self.conn.send(f':server 403 {self.nickname} {channel} :No such channel\r\n'.encode('utf-8'))
+
+    def handle_ping(self, message):
+        payload = message.split(' ', 1)[1]
+        self.conn.send(f'PONG :{payload}\r\n'.encode('utf-8'))
+
+    def disconnect(self):
+        if self.nickname:
+            del self.server.nicknames[self.nickname]
+        for channel in self.channels:
+            if self in self.server.channels.get(channel, []):
+                self.server.channels[channel].remove(self)
+                self.server.broadcast(channel, f':{self.nickname} PART {channel}\r\n')
+        self.conn.close()
+        print(f"User {self.nickname} disconnected.")
+
+class IRCServer:
+    def __init__(self, host='0.0.0.0', port=6667):
+        self.host = host
+        self.port = port
+        self.nicknames = {}
+        self.channels = {}
 
     def start(self):
-        '''
-        (não alterar)
-        Inicia o servidor no método listen e fica em loop infinito.
-        '''
-        start_new_thread(self.listen, ())
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server_socket.bind((self.host, self.port))
+        server_socket.listen(5)
+        print(f"IRC Server listening on {self.host}:{self.port}")
 
         while True:
-            time.sleep(60)
-            print('Servidor funcionando...')
+            conn, addr = server_socket.accept()
+            print(f"Connection from {addr}")
+            client_handler = ClientHandler(conn, addr, self)
+            client_handler.start()
 
+    def broadcast(self, channel, message):
+        for client in self.channels.get(channel, []):
+            client.conn.send(message.encode('utf-8'))
 
-def main():
-    s = Servidor(host='', port=6667, debug=True)
-    s.start()
-
-if __name__ == '__main__':         
-    main()
+if __name__ == '__main__':
+    server = IRCServer()
+    server.start()

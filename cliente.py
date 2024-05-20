@@ -1,42 +1,181 @@
-#!/usr/bin/python
-# -*- coding: utf-8 -*-
-
-import signal
 import socket
+import threading
+import signal
+import sys
 
-class Cliente(Exception):
-    def __init__(self):
-        self.conectado = False
+class IRCClient:
+    def __init__(self, host='localhost', port=6667):
+        self.host = host
+        self.port = port
+        self.sock = None
+        self.nickname = None
+        self.realname = None
+        self.connected = False
+        self.default_channel = None
 
-        signal.signal(signal.SIGALRM, self.exception_handler)
+    def connect(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((self.host, self.port))
+        self.connected = True
+        print(f"Connected to {self.host}:{self.port}")
 
-    def exception_handler(self, signum, frame):
-        raise 'EXCEÇÃO (timeout)'
+        # Start a thread to listen for incoming messages
+        threading.Thread(target=self.receive_messages, daemon=True).start()
 
-    def receber_dados(self):
-        pass
+    def disconnect(self):
+        if self.connected:
+            self.send_command(f"QUIT :{self.nickname} has quit")
+            self.sock.close()
+            self.connected = False
+            print("Disconnected from server")
 
-    def executar(self):
-        cmd = ''
-        print('Cliente!')
+    def send_command(self, command):
+        if self.connected:
+            self.sock.sendall(f"{command}\r\n".encode('utf-8'))
 
-        while True:
-            signal.alarm(20)
+    def receive_messages(self):
+        while self.connected:
             try:
-                cmd = input()
-            except Exception as e:
-                print()
-                continue
-            signal.alarm(0)
+                response = self.sock.recv(512).decode('utf-8').strip()
+                if response:
+                    print(f"Server: {response}")
+                    self.handle_server_message(response)
+                else:
+                    break
+            except:
+                break
+        self.disconnect()
 
-            # Um comando foi digitado. Tratar!
-            # ...
-            
+    def handle_server_message(self, message):
+        if message.startswith("PING"):
+            payload = message.split(":")[1]
+            self.send_command(f"PONG :{payload}")
 
-def main():
-    c = Cliente()
-    c.executar()
+    def run(self):
+        while True:
+            try:
+                command = input("> ").strip()
+                if command.startswith("/nick"):
+                    self.handle_nick(command)
+                elif command.startswith("/user"):
+                    self.handle_user(command)
+                elif command.startswith("/join"):
+                    self.handle_join(command)
+                elif command.startswith("/leave"):
+                    self.handle_leave(command)
+                elif command.startswith("/msg"):
+                    self.handle_msg(command)
+                elif command.startswith("/quit"):
+                    self.handle_quit(command)
+                elif command.startswith("/connect"):
+                    self.handle_connect(command)
+                elif command.startswith("/disconnect"):
+                    self.handle_disconnect(command)
+                elif command.startswith("/channel"):
+                    self.handle_channel(command)
+                elif command.startswith("/list"):
+                    self.handle_list(command)
+                elif command.startswith("/help"):
+                    self.handle_help()
+                else:
+                    print("Unknown command. Type /help for a list of commands.")
+            except KeyboardInterrupt:
+                self.handle_quit("/quit")
+                break
 
+    def handle_connect(self, command):
+        parts = command.split(' ')
+        if len(parts) == 2:
+            self.host = parts[1]
+        self.connect()
 
-if __name__ == '__main__':
-    main()
+    def handle_disconnect(self, command):
+        self.disconnect()
+
+    def handle_nick(self, command):
+        parts = command.split(' ')
+        if len(parts) == 2:
+            self.nickname = parts[1]
+            self.send_command(f"NICK {self.nickname}")
+
+    def handle_user(self, command):
+        parts = command.split(' ', 1)
+        if len(parts) == 2:
+            self.realname = parts[1]
+            self.send_command(f"USER {self.nickname} 0 * :{self.realname}")
+
+    def handle_join(self, command):
+        parts = command.split(' ')
+        if len(parts) == 2:
+            channel = parts[1]
+            self.send_command(f"JOIN {channel}")
+            self.default_channel = channel
+            print(f"Joined channel {channel}")
+
+    def handle_leave(self, command):
+        parts = command.split(' ', 2)
+        if len(parts) >= 2:
+            channel = parts[1]
+            reason = parts[2] if len(parts) == 3 else ""
+            self.send_command(f"PART {channel} :{reason}")
+            if self.default_channel == channel:
+                self.default_channel = None
+                print(f"Left channel {channel}")
+
+    def handle_msg(self, command):
+        parts = command.split(' ', 2)
+        if len(parts) == 3:
+            channel = parts[1]
+            message = parts[2]
+            self.send_command(f"PRIVMSG {channel} :{message}")
+        elif len(parts) == 2 and self.default_channel:
+            message = parts[1]
+            self.send_command(f"PRIVMSG {self.default_channel} :{message}")
+
+    def handle_quit(self, command):
+        parts = command.split(' ', 1)
+        if len(parts) == 2:
+            reason = parts[1]
+        else:
+            reason = "Client Quit"
+        self.send_command(f"QUIT :{reason}")
+        self.disconnect()
+        sys.exit()
+
+    def handle_channel(self, command):
+        parts = command.split(' ')
+        if len(parts) == 2:
+            channel = parts[1]
+            self.default_channel = channel
+            print(f"Switched to channel {channel}")
+        else:
+            print(f"Default channel: {self.default_channel}")
+
+    def handle_list(self, command):
+        parts = command.split(' ')
+        if len(parts) == 2:
+            channel = parts[1]
+            self.send_command(f"NAMES {channel}")
+        elif self.default_channel:
+            self.send_command(f"NAMES {self.default_channel}")
+
+    def handle_help(self):
+        help_text = """
+Available commands:
+/connect <IP>          - Connect to the IRC server at the specified IP address
+/disconnect            - Disconnect from the IRC server
+/nick <nickname>       - Set your nickname
+/user <realname>       - Set your real name
+/join <#channel>       - Join the specified channel
+/leave <#channel>      - Leave the specified channel
+/channel <#channel>    - Set or show the default channel
+/list <#channel>       - List users in the specified channel
+/msg <#channel> <msg>  - Send a message to the specified channel
+/quit <reason>         - Quit the IRC client with an optional reason
+/help                  - Show this help message
+"""
+        print(help_text)
+
+if __name__ == "__main__":
+    client = IRCClient()
+    client.run()
