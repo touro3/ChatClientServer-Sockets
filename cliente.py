@@ -1,161 +1,133 @@
-import signal
-import socket
 import threading
+import socket
+import time
 
-class Cliente:
+class ClienteIRC:
     def __init__(self):
-        self.conectado = False
-        self.servidor = None
+        self.socket_cliente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.nick = None
-        self.canal_padrao = None
-        self.servidor_socket = None
-        self.lock = threading.Lock()
+        self.canal_atual = None
+        self.host = None
+        self.porta = None
+        self.ativo = False
 
-        # Exceção para alarme de tempo (não alterar esta linha)
-        signal.signal(signal.SIGALRM, self.exception_handler)
-
-    def exception_handler(self, signum, frame):
-        raise Exception('EXCEÇÃO (timeout)')
-
-    def conectar(self, ip):
+    def conectar(self, endereco, porta):
+        self.host = endereco
+        self.porta = porta
         try:
-            self.servidor_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.servidor_socket.connect((ip, 6667))
-            self.conectado = True
-            print(f"Conectado ao servidor {ip} na porta 6667")
+            self.socket_cliente.connect((endereco, porta))
+            self.ativo = True
+            threading.Thread(target=self._receber_mensagens).start()
+            print(f"Conectado ao servidor IRC em {endereco}:{porta}")
         except Exception as e:
-            print(f"Erro ao conectar no servidor: {e}")
+            print(f"Erro ao conectar: {str(e)}")
 
-    def enviar_dados(self, mensagem):
-        if self.conectado:
+    def _receber_mensagens(self):
+        while self.ativo:
             try:
-                self.servidor_socket.sendall((mensagem + "\r\n").encode())
+                mensagem = self.socket_cliente.recv(1024).decode().strip()
+                if mensagem:
+                    print(mensagem)
+                    if mensagem.startswith("PING"):
+                        self.enviar_comando("PONG" + mensagem[4:])
             except Exception as e:
-                print(f"Erro ao enviar dados: {e}")
+                print(f"Erro ao receber mensagem: {str(e)}")
+                self.desconectar()
 
-    def receber_dados(self):
-        while self.conectado:
+    def enviar_comando(self, comando):
+        if self.ativo:
             try:
-                dados = self.servidor_socket.recv(4096).decode()
-                if dados:
-                    print(dados)
+                self.socket_cliente.sendall(comando.encode())
             except Exception as e:
-                print(f"Erro ao receber dados: {e}")
-                self.desconectar("Erro ao receber dados")
-                break
+                print(f"Erro ao enviar comando: {str(e)}")
 
-    def executar(self):
-        print("Cliente IRC iniciado. Use /help para listar os comandos disponíveis.")
-        while True:
-            signal.alarm(20)
-            try:
-                cmd = input()
-                signal.alarm(0)
-                self.processar_comando(cmd)
-            except Exception as e:
-                print(e)
-                self.verificar_mensagens_servidor()
-                continue
+    def enviar_mensagem(self, mensagem):
+        if self.ativo and self.canal_atual:
+            comando = f"PRIVMSG {self.canal_atual} :{mensagem}\r\n"
+            self.enviar_comando(comando)
 
-    def processar_comando(self, cmd):
-        if cmd.startswith("/nick"):
-            partes = cmd.split()
+    def processar_comando(self, comando):
+        if not comando:
+            print("Comando vazio. Digite /help para ver os comandos disponíveis.")
+            return
+
+        partes = comando.split()
+        if partes[0] == "/nick":
             if len(partes) == 2:
                 self.nick = partes[1]
-                if self.conectado:
-                    self.enviar_dados(f"NICK :{self.nick}")
+                self.enviar_comando(f"NICK {self.nick}\r\n")
+                self.enviar_comando(f"USER {self.nick} 0 = :{self.nick}\r\n")
             else:
-                print("Uso correto: /nick <username>")
-        elif cmd.startswith("/connect"):
-            partes = cmd.split()
+                print("Uso incorreto do comando. Uso correto: /nick <username>")
+        elif partes[0] == "/connect":
             if len(partes) == 2:
-                threading.Thread(target=self.conectar, args=(partes[1],)).start()
+                endereco = partes[1]
+                self.conectar(endereco, 6667)
             else:
-                print("Uso correto: /connect <IP>")
-        elif cmd.startswith("/disconnect"):
-            partes = cmd.split(":", 1)
-            motivo = partes[1] if len(partes) > 1 else ""
+                print("Uso incorreto do comando. Uso correto: /connect <IP>")
+        elif partes[0] == "/disconnect":
+            motivo = " ".join(partes[1:])
             self.desconectar(motivo)
-        elif cmd.startswith("/quit"):
-            partes = cmd.split(":", 1)
-            motivo = partes[1] if len(partes) > 1 else ""
+        elif partes[0] == "/quit":
+            motivo = " ".join(partes[1:])
             self.desconectar(motivo)
-            print("Cliente encerrado.")
-            exit(0)
-        elif cmd.startswith("/join"):
-            partes = cmd.split()
+            exit()
+        elif partes[0] == "/join":
             if len(partes) == 2:
-                self.enviar_dados(f"JOIN {partes[1]}")
+                canal = partes[1]
+                self.enviar_comando(f"JOIN {canal}\r\n")
+                self.canal_atual = canal
             else:
-                print("Uso correto: /join #<canal>")
-        elif cmd.startswith("/leave") or cmd.startswith("/part"):
-            partes = cmd.split(" ", 2)
+                print("Uso incorreto do comando. Uso correto: /join #<canal>")
+        elif partes[0] == "/leave" or partes[0] == "/part":
             if len(partes) >= 2:
-                motivo = partes[2] if len(partes) == 3 else ""
-                self.enviar_dados(f"PART {partes[1]} :{motivo}")
+                canal = partes[1]
+                motivo = " ".join(partes[2:])
+                self.enviar_comando(f"PART {canal} :{motivo}\r\n")
+                self.canal_atual = None
             else:
-                print("Uso correto: /leave #<canal> <motivo>")
-        elif cmd.startswith("/channel"):
-            partes = cmd.split()
-            if len(partes) == 2:
-                self.canal_padrao = partes[1]
-                print(f"Canal padrão alterado para {self.canal_padrao}")
-            elif len(partes) == 1:
-                print(f"Canais: {self.canal_padrao}")
+                print("Uso incorreto do comando. Uso correto: /leave #<canal> <motivo>")
+        elif partes[0] == "/channel":
+            if len(partes) == 1:
+                print(f"Canal atual: {self.canal_atual}")
             else:
-                print("Uso correto: /channel #<canal>")
-        elif cmd.startswith("/list"):
-            partes = cmd.split()
-            if len(partes) == 2:
-                self.enviar_dados(f"NAMES {partes[1]}")
+                canal = partes[1]
+                self.canal_atual = canal
+        elif partes[0] == "/list":
+            if len(partes) == 1:
+                self.enviar_comando("NAMES\r\n")
             else:
-                if self.canal_padrao:
-                    self.enviar_dados(f"NAMES {self.canal_padrao}")
-                else:
-                    print("Uso correto: /list #<canal>")
-        elif cmd.startswith("/msg"):
-            partes = cmd.split(" ", 2)
-            if len(partes) == 3:
-                self.enviar_dados(f"PRIVMSG {partes[1]} :{partes[2]}")
-            elif len(partes) == 2 and self.canal_padrao:
-                self.enviar_dados(f"PRIVMSG {self.canal_padrao} :{partes[1]}")
+                canal = partes[1]
+                self.enviar_comando(f"NAMES {canal}\r\n")
+        elif partes[0] == "/msg":
+            if len(partes) >= 3:
+                canal = partes[1]
+                mensagem = " ".join(partes[2:])
+                self.enviar_mensagem(mensagem)
             else:
-                print("Uso correto: /msg #<canal> <mensagem>")
-        elif cmd.startswith("/help"):
-            self.exibir_ajuda()
+                print("Uso incorreto do comando. Uso correto: /msg #<canal> <mensagem>")
+        elif partes[0] == "/help":
+            print("Lista de comandos disponíveis:\n")
+            print("/nick <username>: Altera o nome de usuário.")
+            print("/connect <IP>: Conecta ao servidor IRC.")
+            print("/disconnect :<motivo>: Desconecta do servidor IRC.")
+            print("/quit :<motivo>: Sai do cliente IRC.")
+            print("/join #<canal>: Entra em um canal.")
+            print("/leave #<canal> <motivo>: Sai de um canal.")
+            print("/channel #<canal>: Seleciona um canal padrão.")
+            print("/list #<canal>: Lista os usuários de um canal.")
+            print("/msg #<canal> <mensagem>: Envia uma mensagem para um canal.")
+            print("/help: Exibe esta mensagem de ajuda.")
         else:
-            print("Comando não reconhecido. Use /help para listar os comandos disponíveis.")
+            print("Comando desconhecido. Digite /help para ver os comandos disponíveis.")
 
-    def desconectar(self, motivo):
-        if self.conectado:
-            self.enviar_dados(f"QUIT :{motivo}")
-            self.servidor_socket.close()
-            self.conectado = False
-            print("Desconectado do servidor")
+    def desconectar(self, motivo="Saindo"):
+        if self.ativo:
+            self.enviar_comando(f"QUIT :{motivo}\r\n")
+            self.socket_cliente.close()
 
-    def verificar_mensagens_servidor(self):
-        if self.conectado:
-            self.receber_dados()
+cliente = ClienteIRC()
 
-    def exibir_ajuda(self):
-        comandos = {
-            "/nick": "Altera o nome de usuário. Uso: /nick <username>",
-            "/connect": "Conecta ao servidor. Uso: /connect <IP>",
-            "/disconnect": "Desconecta do servidor. Uso: /disconnect :<motivo>",
-            "/quit": "Encerra o cliente. Uso: /quit :<motivo>",
-            "/join": "Entra em um canal. Uso: /join #<canal>",
-            "/leave": "Sai de um canal. Uso: /leave #<canal> <motivo>",
-            "/channel": "Seleciona canal padrão. Uso: /channel #<canal>",
-            "/list": "Lista usuários de um canal. Uso: /list #<canal>",
-            "/msg": "Envia mensagem para um canal. Uso: /msg #<canal> <mensagem>",
-            "/help": "Lista comandos disponíveis."
-        }
-        for cmd, desc in comandos.items():
-            print(f"{cmd}: {desc}")
-
-def main():
-    cliente = Cliente()
-    cliente.executar()
-
-if __name__ == "__main__":
-    main()
+while True:
+    comando = input("Cliente IRC iniciado. Use /help para listar os comandos disponíveis.\n")
+    cliente.processar_comando(comando)
