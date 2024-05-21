@@ -119,13 +119,18 @@ class ClientHandler(threading.Thread):
         parts = message.split(' ', 2)
         if len(parts) == 3:
             target = parts[1]
-            msg = parts[2][1:]  # Skip the leading colon
+            msg = parts[2][1:]  
             if target.startswith("#"):
                 if target in self.server.channels and self in self.server.channels[target]:
                     self.server.broadcast(target, f':{self.nickname} PRIVMSG {target} :{msg}\r\n', exclude_self=True)
             else:
                 if target in self.server.nicknames:
                     self.server.nicknames[target].conn.send(f':{self.nickname} PRIVMSG {target} :{msg}\r\n'.encode('utf-8'))
+                    print(f"Private message from {self.nickname} to {target}: {msg}")
+                else:
+                    self.conn.send(f':server 401 {self.nickname} {target} :No such nick/channel\r\n'.encode('utf-8'))
+        else:
+            self.conn.send(f':server 461 {self.nickname} PRIVMSG :Not enough parameters\r\n'.encode('utf-8'))
 
     def handle_names(self, message):
         parts = message.split(' ')
