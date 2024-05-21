@@ -1,6 +1,7 @@
 import socket
 import threading
 import re
+import random
 
 class ClientHandler(threading.Thread):
     def __init__(self, conn, addr, server):
@@ -13,7 +14,7 @@ class ClientHandler(threading.Thread):
         self.channels = []
 
     def run(self):
-        self.conn.send(b':server 375 :Welcome to the IRC server\r\n')
+        self.conn.send(b':server 375 :Welcome to the IRC server\n')
         while True:
             try:
                 message = self.conn.recv(512).decode('utf-8').strip()
@@ -25,6 +26,7 @@ class ClientHandler(threading.Thread):
             except:
                 break
         self.disconnect()
+
 
     def handle_message(self, message):
         if message.startswith('NICK'):
@@ -54,8 +56,17 @@ class ClientHandler(threading.Thread):
                 self.server.nicknames[nickname] = self
                 self.conn.send(f':server 001 {nickname} :Welcome to the IRC server\r\n'.encode('utf-8'))
                 self.conn.send(f':server 375 {nickname} :- Welcome to the IRC server -\r\n'.encode('utf-8'))
-                self.conn.send(f':server 372 {nickname} :- This is the message of the day\r\n'.encode('utf-8'))
-                self.conn.send(f':server 376 {nickname} :End of /MOTD command.\r\n'.encode('utf-8'))
+                motd = [
+                    "Bem-vindo ao nosso servidor IRC!",
+                    "Esperamos que você tenha uma ótima experiência aqui.",
+                    "Obrigado por se juntar à nossa comunidade!",
+                    "Aproveite o tempo e faça novos amigos!",
+                    "Lembre-se sempre de ser gentil e respeitoso com os outros usuários.",
+                    "Sinta-se à vontade para participar das conversas nos canais disponíveis.",
+                    "Se precisar de ajuda, não hesite em pedir a um dos nossos moderadores."
+                ]
+                selected_motd = random.choice(motd)
+                self.conn.send(f':server 372 {nickname}:{selected_motd}\r\n'.encode('utf-8'))
                 print(f"User {nickname} created successfully.")
             else:
                 self.conn.send(f':server 433 * {nickname} :Nickname is already in use\r\n'.encode('utf-8'))

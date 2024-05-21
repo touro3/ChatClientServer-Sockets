@@ -161,21 +161,22 @@ class IRCClient:
 
     def handle_help(self):
         help_text = """
-Available commands:
-/connect <IP>          - Connect to the IRC server at the specified IP address
-/disconnect            - Disconnect from the IRC server
-/nick <nickname>       - Set your nickname
-/user <realname>       - Set your real name
-/join <#channel>       - Join the specified channel
-/leave <#channel>      - Leave the specified channel
-/channel <#channel>    - Set or show the default channel
-/list <#channel>       - List users in the specified channel
-/msg <#channel> <msg>  - Send a message to the specified channel
-/quit <reason>         - Quit the IRC client with an optional reason
-/help                  - Show this help message
+Comandos disponíveis:
+/connect <IP> - Conectar ao servidor IRC no endereço IP especificado
+/disconnect - Desconectar do servidor IRC
+/nick <apelido> - Definir seu apelido
+/user <nome real> - Definir seu nome real
+/join <#canal> - Entrar no canal especificado
+/leave <#canal> - Sair do canal especificado
+/channel <#canal> - Definir ou mostrar o canal padrão
+/list <#canal> - Listar usuários no canal especificado
+/msg <#canal> <msg> - Enviar uma mensagem para o canal especificado
+/quit <motivo> - Sair do cliente IRC com um motivo opcional
+/help - Mostrar esta mensagem de ajuda
 """
         print(help_text)
 
 if __name__ == "__main__":
+    print("Digite /help para ver os comandos disponíveis.")
     client = IRCClient()
     client.run()
