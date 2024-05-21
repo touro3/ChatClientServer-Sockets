@@ -27,7 +27,6 @@ class ClientHandler(threading.Thread):
                 break
         self.disconnect()
 
-
     def handle_message(self, message):
         if message.startswith('NICK'):
             self.handle_nick(message)
@@ -123,7 +122,7 @@ class ClientHandler(threading.Thread):
             msg = parts[2][1:]  # Skip the leading colon
             if target.startswith("#"):
                 if target in self.server.channels and self in self.server.channels[target]:
-                    self.server.broadcast(target, f':{self.nickname} PRIVMSG {target} :{msg}\r\n')
+                    self.server.broadcast(target, f':{self.nickname} PRIVMSG {target} :{msg}\r\n', exclude_self=True)
             else:
                 if target in self.server.nicknames:
                     self.server.nicknames[target].conn.send(f':{self.nickname} PRIVMSG {target} :{msg}\r\n'.encode('utf-8'))
@@ -175,9 +174,10 @@ class IRCServer:
             client_handler = ClientHandler(conn, addr, self)
             client_handler.start()
 
-    def broadcast(self, channel, message):
+    def broadcast(self, channel, message, exclude_self=False):
         for client in self.channels.get(channel, []):
-            client.conn.send(message.encode('utf-8'))
+            if not exclude_self or client.nickname != message.split(' ')[0][1:]:
+                client.conn.send(message.encode('utf-8'))
 
 if __name__ == '__main__':
     server = IRCServer()
