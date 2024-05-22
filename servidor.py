@@ -14,7 +14,6 @@ class ClientHandler(threading.Thread):
         self.channels = []
 
     def run(self):
-        self.conn.send(b':server 375 :Welcome to the IRC server\n')
         while True:
             try:
                 message = self.conn.recv(512).decode('utf-8').strip()
@@ -53,7 +52,6 @@ class ClientHandler(threading.Thread):
             if nickname not in self.server.nicknames:
                 self.nickname = nickname
                 self.server.nicknames[nickname] = self
-                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server\r\n'.encode('utf-8'))
                 self.conn.send(f':server 375 {nickname} :- Welcome to the IRC server -\r\n'.encode('utf-8'))
                 motd = [
                     "Bem-vindo ao nosso servidor IRC!",
@@ -65,7 +63,7 @@ class ClientHandler(threading.Thread):
                     "Se precisar de ajuda, não hesite em pedir a um dos nossos moderadores."
                 ]
                 selected_motd = random.choice(motd)
-                self.conn.send(f':server 372 {nickname}:{selected_motd}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 372 {nickname}:- {selected_motd}\r\n'.encode('utf-8'))
                 print(f"User {nickname} created successfully.")
             else:
                 self.conn.send(f':server 433 * {nickname} :Nickname is already in use\r\n'.encode('utf-8'))
@@ -75,7 +73,7 @@ class ClientHandler(threading.Thread):
     def handle_user(self, message):
         parts = message.split(' ', 4)
         if len(parts) == 5:
-            self.realname = parts[4][1:]  # Skip the leading colon
+            self.realname = parts[4][1:]  
             print(f"User {self.nickname} set real name to {self.realname}")
 
     def handle_join(self, message):
