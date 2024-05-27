@@ -16,9 +16,17 @@ class ClientHandler(threading.Thread):
     def run(self):
         while True:
             try:
-                message = self.conn.recv(512).decode('utf-8').strip()
+                message = self.conn.recv(512)
                 if not message:
                     break
+                message = message.strip()
+                if not message:
+                    continue
+                try:
+                    message = message.decode('utf-8')
+                except UnicodeDecodeError:
+                    print(f"Error decoding message from {self.addr}: {message}")
+                    continue
                 print(f"Received message from {self.addr}: {message}")
                 self.handle_message(message)
             except ConnectionResetError:
@@ -208,7 +216,8 @@ class IRCServer:
         for client in self.channels.get(channel, []):
             if not exclude_self or client.nickname != message.split(' ')[0][1:]:
                 client.conn.send(message.encode('utf-8'))
-    
+
 if __name__ == '__main__':
     server = IRCServer()
     server.start()
+
