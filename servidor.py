@@ -17,16 +17,22 @@ class ClientHandler(threading.Thread):
         while True:
             try:
                 message = self.conn.recv(512).decode('utf-8').strip()
-                if message:
-                    print(f"Received message from {self.addr}: {message}")
-                    self.handle_message(message)
-                else:
+                if not message:
                     break
-            except:
+                print(f"Received message from {self.addr}: {message}")
+                self.handle_message(message)
+            except ConnectionResetError:
+                break
+            except Exception as e:
+                print(f"Error handling message from {self.addr}: {e}")
                 break
         self.disconnect()
 
     def handle_message(self, message):
+        if len(message) > 512:
+            self.conn.send(b':server 500 :Message too long\r\n')
+            return
+
         if message.startswith('NICK'):
             self.handle_nick(message)
         elif message.startswith('USER'):
@@ -41,6 +47,8 @@ class ClientHandler(threading.Thread):
             self.handle_privmsg(message)
         elif message.startswith('NAMES'):
             self.handle_names(message)
+        elif message.startswith('LIST'):
+            self.handle_list(message)
         elif message.startswith('PING'):
             self.handle_ping(message)
         else:
@@ -50,8 +58,14 @@ class ClientHandler(threading.Thread):
         nickname = message.split(' ')[1]
         if re.match(r'^[a-zA-Z][a-zA-Z0-9_]{0,8}$', nickname):
             if nickname not in self.server.nicknames:
+                if self.nickname:
+                    del self.server.nicknames[self.nickname]
                 self.nickname = nickname
                 self.server.nicknames[nickname] = self
+                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server {nickname}!{self.addr[0]}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 002 {nickname} :Your host is {self.server.host}, running version {self.server.version}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 003 {nickname} :This server was created {self.server.created}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 004 {nickname} :{self.server.host} {self.server.version} o o\r\n'.encode('utf-8'))
                 self.conn.send(f':server 375 {nickname} :- Welcome to the IRC server -\r\n'.encode('utf-8'))
                 motd = [
                     "Bem-vindo ao nosso servidor IRC!",
@@ -133,7 +147,9 @@ class ClientHandler(threading.Thread):
     def handle_names(self, message):
         parts = message.split(' ')
         if len(parts) < 2:
-            self.conn.send(f':server 461 {self.nickname} NAMES :Not enough parameters\r\n'.encode('utf-8'))
+            for channel, users in self.server.channels.items():
+                self.conn.send(f':server 353 {self.nickname} = {channel} :{" ".join([client.nickname for client in users])}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 366 {self.nickname} {channel} :End of /NAMES list.\r\n'.encode('utf-8'))
             return
         channel = parts[1]
         if channel in self.server.channels:
@@ -142,6 +158,15 @@ class ClientHandler(threading.Thread):
             self.conn.send(f':server 366 {self.nickname} {channel} :End of /NAMES list.\r\n'.encode('utf-8'))
         else:
             self.conn.send(f':server 403 {self.nickname} {channel} :No such channel\r\n'.encode('utf-8'))
+
+    def handle_list(self, message):
+        if len(self.server.channels) == 0:
+            self.conn.send(f':server 321 {self.nickname} :Channel :Users  Name\r\n'.encode('utf-8'))
+            self.conn.send(f':server 323 {self.nickname} :End of /LIST\r\n'.encode('utf-8'))
+        else:
+            for channel, users in self.server.channels.items():
+                self.conn.send(f':server 322 {self.nickname} {channel} {len(users)} :{" ".join([client.nickname for client in users])}\r\n'.encode('utf-8'))
+            self.conn.send(f':server 323 {self.nickname} :End of /LIST\r\n'.encode('utf-8'))
 
     def handle_ping(self, message):
         payload = message.split(' ', 1)[1]
@@ -158,30 +183,32 @@ class ClientHandler(threading.Thread):
         print(f"User {self.nickname} disconnected.")
 
 class IRCServer:
-    def __init__(self, host='0.0.0.0', port=6667):
+    def __init__(self, host='0.0.0.0', port=6667, version='1.0', created='2024-05-27'):
         self.host = host
         self.port = port
+        self.version = version
+        self.created = created
         self.nicknames = {}
         self.channels = {}
 
     def start(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server_socket.bind((self.host, self.port))
-        server_socket.listen(5)
-        print(f"IRC Server listening on {self.host}:{self.port}")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((self.host, self.port))
+            server_socket.listen(5)
+            print(f"IRC Server listening on {self.host}:{self.port}")
 
-        while True:
-            conn, addr = server_socket.accept()
-            print(f"Connection from {addr}")
-            client_handler = ClientHandler(conn, addr, self)
-            client_handler.start()
+            while True:
+                conn, addr = server_socket.accept()
+                print(f"Connection from {addr}")
+                client_handler = ClientHandler(conn, addr, self)
+                client_handler.start()
 
     def broadcast(self, channel, message, exclude_self=False):
         for client in self.channels.get(channel, []):
             if not exclude_self or client.nickname != message.split(' ')[0][1:]:
                 client.conn.send(message.encode('utf-8'))
-
+    
 if __name__ == '__main__':
     server = IRCServer()
     server.start()
