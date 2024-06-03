@@ -70,11 +70,8 @@ class ClientHandler(threading.Thread):
                     del self.server.nicknames[self.nickname]
                 self.nickname = nickname
                 self.server.nicknames[nickname] = self
-                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server {nickname}!{self.addr[0]}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server {nickname}!\r\n'.encode('utf-8'))
                 self.conn.send(f':server 002 {nickname} :Your host is {self.server.host}, running version {self.server.version}\r\n'.encode('utf-8'))
-                self.conn.send(f':server 003 {nickname} :This server was created {self.server.created}\r\n'.encode('utf-8'))
-                self.conn.send(f':server 004 {nickname} :{self.server.host} {self.server.version} o o\r\n'.encode('utf-8'))
-                self.conn.send(f':server 375 {nickname} :- Welcome to the IRC server -\r\n'.encode('utf-8'))
                 motd = [
                     "Bem-vindo ao nosso servidor IRC!",
                     "Esperamos que você tenha uma ótima experiência aqui.",
@@ -85,7 +82,7 @@ class ClientHandler(threading.Thread):
                     "Se precisar de ajuda, não hesite em pedir a um dos nossos moderadores."
                 ]
                 selected_motd = random.choice(motd)
-                self.conn.send(f':server 372 {nickname}:- {selected_motd}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 372 {nickname}:\r\nMessage of the Day:-{selected_motd}\r\n'.encode('utf-8'))
                 print(f"User {nickname} created successfully.")
             else:
                 self.conn.send(f':server 433 * {nickname} :Nickname is already in use\r\n'.encode('utf-8'))
@@ -114,6 +111,7 @@ class ClientHandler(threading.Thread):
             self.server.broadcast(channel, f':{self.nickname} JOIN {channel}\r\n')
             self.conn.send(f':server 353 {self.nickname} = {channel} :{" ".join([client.nickname for client in self.server.channels[channel]])}\r\n'.encode('utf-8'))
             self.conn.send(f':server 366 {self.nickname} {channel} :End of /NAMES list.\r\n'.encode('utf-8'))
+            self.server.broadcast(channel, f':server NOTICE {channel} :{self.nickname} is now online\r\n')
             print(f"User {self.nickname} joined channel {channel}.")
         else:
             self.conn.send(f':server 403 {self.nickname} {channel} :No such channel\r\n'.encode('utf-8'))
@@ -128,6 +126,7 @@ class ClientHandler(threading.Thread):
             self.server.channels[channel].remove(self)
             self.channels.remove(channel)
             self.server.broadcast(channel, f':{self.nickname} PART {channel}\r\n')
+            self.server.broadcast(channel, f':server NOTICE {channel} :{self.nickname} is now offline\r\n')
             print(f"User {self.nickname} left channel {channel}.")
         else:
             self.conn.send(f':server 442 {self.nickname} {channel} :You’re not on that channel\r\n'.encode('utf-8'))
@@ -187,6 +186,7 @@ class ClientHandler(threading.Thread):
             if self in self.server.channels.get(channel, []):
                 self.server.channels[channel].remove(self)
                 self.server.broadcast(channel, f':{self.nickname} PART {channel}\r\n')
+                self.server.broadcast(channel, f':server NOTICE {channel} :{self.nickname} is now offline\r\n')
         self.conn.close()
         print(f"User {self.nickname} disconnected.")
 
@@ -220,4 +220,3 @@ class IRCServer:
 if __name__ == '__main__':
     server = IRCServer()
     server.start()
-
