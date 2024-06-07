@@ -12,6 +12,7 @@ class ClientHandler(threading.Thread):
         self.nickname = None
         self.realname = None
         self.channels = []
+        self.first_nick_set = False
 
     def run(self):
         while True:
@@ -70,8 +71,7 @@ class ClientHandler(threading.Thread):
                     del self.server.nicknames[self.nickname]
                 self.nickname = nickname
                 self.server.nicknames[nickname] = self
-                self.conn.send(f':server 001 {nickname} :Welcome to the IRC server {nickname}!\r\n'.encode('utf-8'))
-                self.conn.send(f':server 002 {nickname} :Your host is {self.server.host}, running version {self.server.version}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 001 {nickname} :Welcome to the IRC of Crias server {nickname}!\r\n'.encode('utf-8'))
                 motd = [
                     "Bem-vindo ao nosso servidor IRC!",
                     "Esperamos que você tenha uma ótima experiência aqui.",
@@ -82,7 +82,7 @@ class ClientHandler(threading.Thread):
                     "Se precisar de ajuda, não hesite em pedir a um dos nossos moderadores."
                 ]
                 selected_motd = random.choice(motd)
-                self.conn.send(f':server 372 {nickname}:\r\nMessage of the Day:-{selected_motd}\r\n'.encode('utf-8'))
+                self.conn.send(f':server 372 {nickname} :Message of the Day:{selected_motd}\r\n'.encode('utf-8'))
                 print(f"User {nickname} created successfully.")
             else:
                 self.conn.send(f':server 433 * {nickname} :Nickname is already in use\r\n'.encode('utf-8'))
