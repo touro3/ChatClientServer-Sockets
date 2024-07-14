@@ -1,108 +1,100 @@
-# Sistema de Mensagens Instantâneas IRC
+# IRC Instant Messaging System
 
-## Visão Geral do Sistema
-Este sistema de mensagens instantâneas baseia-se no protocolo IRC (Internet Relay Chat) e consiste em dois componentes principais:
+## System Overview
+This instant messaging system is based on the IRC (Internet Relay Chat) protocol and consists of two main components:
 
-- **Servidor (servidor.py)**: Gerencia a comunicação entre clientes, distribuindo mensagens e mantendo informações sobre usuários e canais.
-- **Cliente (cliente.py)**: Interface do usuário que permite a interação com o servidor, envio e recebimento de mensagens.
-
----
-
-## Cliente (cliente.py)
-O cliente permite que o usuário se conecte ao servidor IRC, envie comandos e receba mensagens.
-
-
-### Comandos do Usuário
-- **/connect <host>**: Conecta ao servidor IRC.
-- **/nick <username>**: Define o apelido do usuário.
-- **/disconnect <motivo>**: Desconecta do servidor IRC.
-- **/quit <motivo>**: Sai do cliente IRC.
-- **/join <canal>**: Entra em um canal. **Se o canal não existir ele é criado**
-- **/leave <canal> <motivo>**: Sai de um canal.
-- **/channel <canal>**: Define o canal atual ou lista os canais que está participando.
-- **/list**: Lista os canais disponíveis.
-- **/names <canal>**: Lista os usuários em um canal.
-- **/msg <canal> <mensagem>**: Envia uma mensagem para um canal. Se o canal não for informado envia para o canal padrão se esse existir
-- **/help**: Mostra a lista de comandos disponíveis.
-- **ping <mensagem>**: Envia um ping para o servidor.
-
-### Funcionalidades
-- **Iniciar Cliente**
-  - **Método**: `main()`
-  - **Descrição**: Inicializa o cliente e começa a processar comandos do usuário.
-  - **Utilização**: Executar o script `cliente.py` inicia o cliente.
-
-- **Executar Cliente**
-  - **Método**: `executar()`
-  - **Descrição**: Loop principal que aguarda comandos do usuário e os processa.
-  - **Utilização**: Chamado pelo método `main()`.
-
-- **Conectar ao Servidor**
-  - **Método**: `conectar(host, port=6667)`
-  - **Descrição**: Estabelece uma conexão TCP com o servidor e envia os comandos NICK e USER.
-  - **Utilização**: Comando do usuário `/connect <host>`.
-
-- **Enviar Dados**
-  - **Método**: `enviar_dados(msg)`
-  - **Descrição**: Envia dados codificados ao servidor.
-  - **Utilização**: Internamente chamado ao processar comandos.
-
-- **Receber Dados**
-  - **Método**: `receber_dados()`
-  - **Descrição**: Recebe dados do servidor e processa os comandos recebidos.
-  - **Utilização**: Internamente chamado em uma thread separada.
-
-- **Processar Comandos do Servidor**
-  - **Método**: `processar_comando(linha)`
-  - **Descrição**: Processa os comandos recebidos do servidor.
-  - **Utilização**: Internamente chamado ao receber dados.
-
+- **Server (server.py)**: Manages communication between clients, distributing messages, and maintaining information about users and channels.
+- **Client (client.py)**: User interface that allows interaction with the server, sending, and receiving messages.
 
 ---
 
-## Servidor (servidor.py)
-O servidor é responsável por aceitar conexões de clientes, processar comandos e gerenciar a comunicação entre diferentes usuários.
+## Client (client.py)
+The client allows the user to connect to the IRC server, send commands, and receive messages.
 
+### User Commands
+- **/connect <host>**: Connects to the IRC server.
+- **/nick <username>**: Sets the user's nickname.
+- **/disconnect <reason>**: Disconnects from the IRC server.
+- **/quit <reason>**: Exits the IRC client.
+- **/join <channel>**: Joins a channel. **If the channel does not exist, it is created**
+- **/leave <channel> <reason>**: Leaves a channel.
+- **/channel <channel>**: Sets the current channel or lists the channels the user is participating in.
+- **/list**: Lists available channels.
+- **/names <channel>**: Lists users in a channel.
+- **/msg <channel> <message>**: Sends a message to a channel. If the channel is not specified, sends to the default channel if it exists.
+- **/help**: Shows the list of available commands.
+- **ping <message>**: Sends a ping to the server.
 
-### Funcionalidades
+### Features
+- **Start Client**
+  - **Method**: `main()`
+  - **Description**: Initializes the client and starts processing user commands.
+  - **Usage**: Running the `cliente.py` script starts the client.
 
-- **Iniciar o Servidor**
-  - **Método**: `start()`
-  - **Descrição**: Inicializa o servidor e começa a aceitar conexões de clientes em uma thread separada.
+- **Run Client**
+  - **Method**: `executar()`
+  - **Description**: Main loop that waits for and processes user commands.
+  - **Usage**: Called by the `main()` method.
 
-- **Aceitar Conexões**
-  - **Método**: `accept_connections()`
-  - **Descrição**: Escuta a porta especificada para novas conexões de clientes e cria uma thread para cada cliente conectado usando a classe Cliente e método run().
+- **Connect to Server**
+  - **Method**: `conectar(host, port=6667)`
+  - **Description**: Establishes a TCP connection with the server and sends the NICK and USER commands.
+  - **Usage**: User command `/connect <host>`.
 
-- **Processar Comandos**
-  - **Métodos**: `receive_data(), process_commands(), handle_command(command)`
-  - **Descrição**: Dentro da função run que roda em loop se espera receber dados com receive_data(), processar os dados e depois tratar os comandos com handle_command. A partir do handle_command() são usados outro métodos de acordo com o comando.
+- **Send Data**
+  - **Method**: `enviar_dados(msg)`
+  - **Description**: Sends encoded data to the server.
+  - **Usage**: Internally called when processing commands.
 
+- **Receive Data**
+  - **Method**: `receber_dados()`
+  - **Description**: Receives data from the server and processes received commands.
+  - **Usage**: Internally called in a separate thread.
 
-
-### Comandos IRC Implementados
-- **NICK**: Define o apelido do usuário.
-- **USER**: Define o nome real do usuário.
-- **PING**: Verifica se o host ainda está conectado.
-- **JOIN**: Permite que um usuário entre em um canal.
-- **PART**: Permite que um usuário saia de um canal.
-- **QUIT**: Desconecta o usuário do servidor.
-- **PRIVMSG**: Envia mensagens privadas para um canal.
-- **NAMES**: Lista os usuários de um canal.
-- **LIST**: Lista os canais disponíveis.
+- **Process Server Commands**
+  - **Method**: `processar_comando(linha)`
+  - **Description**: Processes commands received from the server.
+  - **Usage**: Internally called upon receiving data.
 
 ---
 
-## Como Executar
+## Server (server.py)
+The server is responsible for accepting client connections, processing commands, and managing communication between different users.
 
-### Servidor
-Para iniciar o servidor, execute o seguinte comando no terminal:
-```sh
-python3 servidor.py
-```
+### Features
 
+- **Start Server**
+  - **Method**: `start()`
+  - **Description**: Initializes the server and starts accepting client connections in a separate thread.
 
-### Cliente
-Para inicia o cliente, execute o seguinte comando no terminal:
-```sh
-python3 cliente.py
+- **Accept Connections**
+  - **Method**: `accept_connections()`
+  - **Description**: Listens to the specified port for new client connections and creates a thread for each connected client using the Cliente class and run() method.
+
+- **Process Commands**
+  - **Methods**: `receive_data(), process_commands(), handle_command(command)`
+  - **Description**: Within the run function that runs in a loop, it waits to receive data with receive_data(), processes the data, and then handles the commands with handle_command. Depending on the command, other methods are used.
+
+### Implemented IRC Commands
+- **NICK**: Sets the user's nickname.
+- **USER**: Sets the user's real name.
+- **PING**: Checks if the host is still connected.
+- **JOIN**: Allows a user to join a channel.
+- **PART**: Allows a user to leave a channel.
+- **QUIT**: Disconnects the user from the server.
+- **PRIVMSG**: Sends private messages to a channel.
+- **NAMES**: Lists users in a channel.
+- **LIST**: Lists available channels.
+
+---
+
+## How to Run
+
+### Server
+To start the server, run the following command in the terminal:
+python3 server.py
+
+### Client
+To start the client, run the following command in the terminal:
+python3 client.py
+
